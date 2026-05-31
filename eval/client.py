@@ -140,10 +140,13 @@ class MockClient:
 
     async def complete(
         self, model: str, messages: list[dict],
-        choices: list[str] | None = None, **_: object,
+        choices: list[str] | None = None, seed_key: str | None = None,
+        **_: object,
     ) -> Completion:
         prompt = messages[-1]["content"] if messages else ""
-        h = int(hashlib.sha256(f"{model}|{prompt}".encode()).hexdigest(), 16)
+        # seed_key (the cell_key) varies per sample, so a cell yields a distribution.
+        basis = seed_key or f"{model}|{prompt}"
+        h = int(hashlib.sha256(basis.encode()).hexdigest(), 16)
         opts = choices or ["A", "B"]
         if (h % 100) / 100.0 < self._refusal_rate:
             text = "I'm sorry, but I can't help with that."

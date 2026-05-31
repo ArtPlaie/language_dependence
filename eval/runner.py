@@ -6,11 +6,23 @@ M1 scope: grid expansion + `--dry-run` plan/cost + `--limit`. Live execution
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
 
+from eval.client import Client
 from eval.config import Config, ItemSet, Translations
 from eval.languages import resolve as resolve_language
-from eval.schema import CallSpec
+from eval.schema import CallResult, CallSpec
+from eval.storage import (
+    RawWriter,
+    completed_cell_keys,
+    new_run_id,
+    write_manifest,
+    write_results_csv,
+)
 
 
 def build_grid(
@@ -50,6 +62,148 @@ def build_grid(
     if limit is not None:
         specs = specs[:limit]
     return specs
+
+
+def select_pending(
+    cfg: Config,
+    grid: list[CallSpec],
+    done: set[str],
+    mode: str,
+    allow_unverified: bool,
+) -> list[CallSpec]:
+    """Filter the grid to the cells we will actually call this invocation.
+
+    - already-completed cells (by cell_key) are skipped (resumability);
+    - in live mode, untranslated (mock) cells and unverified models are skipped
+      (the latter unless ``allow_unverified``); mock mode runs everything.
+    """
+    verified = {m.id: m.verified for m in cfg.models}
+    pending: list[CallSpec] = []
+    for spec in grid:
+        if spec.cell_key in done:
+            continue
+        if mode == "live":
+            if spec.is_mock:
+                continue
+            if not allow_unverified and not verified.get(spec.model, False):
+                continue
+        pending.append(spec)
+    return pending
+
+
+def results_from_raw(run_id: str, raw_path: Path) -> list[CallResult]:
+    """Rebuild CSV rows from the verbatim JSONL (parsing reads from disk, not memory).
+
+    M2 leaves outcomes unparsed; the M4 classifier will fill parsed_outcome/refused
+    from this same raw log without re-calling any API.
+    """
+    rows: list[CallResult] = []
+    if not raw_path.exists():
+        return rows
+    with raw_path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            rows.append(
+                CallResult(
+                    run_id=run_id,
+                    model=rec["model"],
+                    provider=rec["provider"],
+                    item_id=rec["item_id"],
+                    variant_id=rec["variant_id"],
+                    language=rec["language"],
+                    script=rec["script"],
+                    sample_idx=rec["sample_idx"],
+                    raw_response=rec.get("response_text", ""),
+                    parsed_outcome=None,
+                    parse_method="unparsed",
+                    refused=None,
+                    latency_ms=rec.get("latency_ms"),
+                    error=rec.get("error"),
+                )
+            )
+    return rows
+
+
+async def execute(
+    cfg: Config,
+    items: ItemSet,
+    translations: Translations,
+    client: Client,
+    *,
+    mode: str,
+    limit: int | None = None,
+    allow_unverified: bool = False,
+    run_id: str | None = None,
+) -> Path:
+    """Run the grid: append raw JSONL as responses arrive, then (re)build CSV + manifest.
+
+    Resumable: pass an existing ``run_id`` to skip cells already logged without error.
+    """
+    run_id = run_id or new_run_id()
+    raw_path = Path(cfg.paths.raw_dir) / f"{run_id}.jsonl"
+    run_dir = Path(cfg.paths.runs_dir) / run_id
+
+    grid = build_grid(cfg, items, translations, limit=limit)
+    done = completed_cell_keys(raw_path)
+    pending = select_pending(cfg, grid, done, mode, allow_unverified)
+    item_options = {it.id: it.options for it in items.items}
+
+    async def run_one(spec: CallSpec) -> tuple[CallSpec, object]:
+        content = spec.prompt or "(mock: untranslated cell)"
+        messages = [{"role": "user", "content": content}]
+        choices = item_options.get(spec.item_id, ["A", "B"])
+        comp = await client.complete(
+            spec.model, messages,
+            temperature=cfg.run.temperature,
+            max_tokens=cfg.run.max_tokens,
+            seed=cfg.run.seed,
+            choices=choices,
+            seed_key=spec.cell_key,
+        )
+        return spec, comp
+
+    model_snapshots: dict[str, str | None] = {}
+    writer = RawWriter(raw_path)
+    try:
+        tasks = [asyncio.create_task(run_one(s)) for s in pending]
+        for fut in asyncio.as_completed(tasks):
+            spec, comp = await fut
+            # TIER-1: write verbatim raw BEFORE any parsing.
+            writer.append({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "run_id": run_id,
+                "cell_key": spec.cell_key,
+                "model": spec.model,
+                "provider": spec.provider,
+                "item_id": spec.item_id,
+                "variant_id": spec.variant_id,
+                "language": spec.language,
+                "script": spec.script,
+                "sample_idx": spec.sample_idx,
+                "is_mock": spec.is_mock,
+                "prompt": content_for(spec),
+                "response_text": comp.text,
+                "model_snapshot": comp.model_snapshot,
+                "latency_ms": comp.latency_ms,
+                "error": comp.error,
+                "raw_response": comp.raw,
+            })
+            model_snapshots[spec.model] = comp.model_snapshot
+    finally:
+        writer.close()
+
+    # Source of truth = raw JSONL on disk; CSV is derived from it (includes resumed cells).
+    rows = results_from_raw(run_id, raw_path)
+    write_results_csv(run_dir / "results.csv", rows)
+    write_manifest(run_dir / "run_manifest.json", cfg, run_id, model_snapshots, len(rows), mode)
+    return run_dir
+
+
+def content_for(spec: CallSpec) -> str:
+    return spec.prompt or "(mock: untranslated cell)"
 
 
 def estimate_cost(cfg: Config, grid: list[CallSpec]) -> dict[str, object]:
