@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from eval.classifier import classify_results
 from eval.client import Client
 from eval.config import Config, ItemSet, Translations
 from eval.languages import resolve as resolve_language
@@ -197,6 +198,8 @@ async def execute(
 
     # Source of truth = raw JSONL on disk; CSV is derived from it (includes resumed cells).
     rows = results_from_raw(run_id, raw_path)
+    # Stage-1 classification is pure/offline: fill outcomes without re-calling any API.
+    classify_results(rows, items)
     write_results_csv(run_dir / "results.csv", rows)
     write_manifest(run_dir / "run_manifest.json", cfg, run_id, model_snapshots, len(rows), mode)
     return run_dir
