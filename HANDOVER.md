@@ -4,7 +4,13 @@
 > blockers, and the exact next steps. Pair it with `CLAUDE.md` (rules) and
 > `SPEC.md` (design + milestones).
 
-_Last updated: 2026-05-31 · Branch: `claude/relaxed-maxwell-BEdrp`_
+_Last updated: 2026-05-31 (session 2) · Branch: `claude/vigilant-franklin-bQxQa`_
+
+> **⚡ STATE CHANGE since last handover:** the OpenRouter network blocker is
+> **GONE** — `GET https://openrouter.ai/api/v1/models` now returns **HTTP 200**
+> from inside the session. The ONLY thing still missing for live runs is the
+> **API key** in the environment (see §2). Branch is now
+> `claude/vigilant-franklin-bQxQa` (all prior commits carried over).
 
 ---
 
@@ -19,45 +25,50 @@ otherwise identical prompt. Built milestone-by-milestone per `SPEC.md`.
 | Docs (CLAUDE/SPEC) | ✅ committed | in repo |
 | **M1** skeleton + schema + dry-run | ✅ done | `make dry` → 22,880 cells + ~$2.3 cost, **0 API calls** |
 | **M2 (mock half)** execute + raw JSONL + CSV + manifest + resume | ✅ done | mock smoke writes JSONL→CSV, resume +0 then 120→200; **10/10 tests** |
-| **M2 (live half)** real OpenRouter call | ⛔ **BLOCKED** | env network policy blocks `openrouter.ai` |
+| **M2 (live half)** real OpenRouter call | 🔓 **network UNBLOCKED**, ⏳ waiting on API key | `/api/v1/models` → HTTP 200 |
 | M3 resumability | ✅ effectively done (`--resume`) — needs live multi-model confirm |
 | **M4** classifier + tests | ⬜ next, **doable offline** on the raw log |
 | M5 aggregation + charts | ⬜ | |
 | M6 README headline + sample run | ⬜ | |
 
-**The one blocker:** outbound network to `openrouter.ai` is denied
-(`Host not in allowlist`), so no live calls and no slug/price validation can
-happen from inside the cloud session yet.
+**The one remaining blocker:** `OPENROUTER_API_KEY` is **not set** in the
+environment. Network is open (HTTP 200 to `/models`), so as soon as the key is
+present we can validate slugs, pull real prices, and run the live smoke.
 
 ---
 
 ## 2. What the user must do to unblock LIVE runs
 
-1. **Open network access** (web UI): cloud icon (shows current env name) → hover env
-   → gear/settings → **Network access: Custom** → in **Allowed domains** add:
-   ```
-   openrouter.ai
-   *.openrouter.ai
-   ```
-   ✅ also check *"Also include default list of common package managers"* (else
-   PyPI/uv break). Save.
-2. **Start a NEW session** on branch `claude/relaxed-maxwell-BEdrp`. Editing allowed
-   hosts rebuilds the env cache + re-runs setup; a *resumed* session does **not**
-   pick it up. (Docs: https://code.claude.com/docs/en/claude-code-on-the-web#network-access)
-3. **Set the API key** as an env var in the environment settings:
-   `OPENROUTER_API_KEY=...` (or a local `.env` — `.env` is gitignored).
-4. (Optional, for real multilingual) **fill translations**: replace `TODO_TRANSLATE`
-   placeholders in `prompts/translations.yaml`. Until then only `en`/`fr` cells are
-   "live"; the rest run in mock.
+✅ **Network: DONE.** `openrouter.ai` is reachable from the session (HTTP 200).
+No more allowlist work needed.
+
+⏳ **Still needed — the API key.** Set `OPENROUTER_API_KEY` (`sk-or-v1-...`,
+created at openrouter.ai → Settings → Keys). Pick ONE:
+  - **Env var in the Claude Code environment settings** (recommended for web
+    sessions; may require a NEW session to take effect — hence this handover).
+  - **A local `.env`** at repo root (gitignored; works in the current session
+    without a rebuild). NB: confirm the code loads `.env` — at time of writing
+    the client reads `os.environ`; we may need to add `load_dotenv()` or export
+    it in the shell. **First action next session: verify key visibility.**
+
+  ⚠️ NOT GitHub Actions secrets — those are only injected into Actions workflows,
+  not into a web/app session's `os.environ` (unless a workflow explicitly maps
+  `env: OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}`).
+
+(Optional, for real multilingual) **fill translations**: replace `TODO_TRANSLATE`
+placeholders in `prompts/translations.yaml`. Until then only `en`/`fr` cells are
+"live"; the rest run in mock.
 
 ---
 
 ## 3. First actions for the NEXT session (in order)
 
-1. `git pull` / confirm on branch `claude/relaxed-maxwell-BEdrp`; `uv sync --extra dev`.
-2. **Verify network is open:**
-   `curl -sL https://openrouter.ai/api/v1/models -w "\n%{http_code}\n" | tail -1`
-   - `200` → proceed. `403 Host not in allowlist` → still blocked; tell user.
+1. `git pull` / confirm on branch `claude/vigilant-franklin-bQxQa`; `uv sync --extra dev`.
+2. **Verify the API key is visible:** `echo "${OPENROUTER_API_KEY:+OK present}"`.
+   - empty → key not in env; check `.env` exists and is loaded (add
+     `load_dotenv()` if needed) or ask user to set the env var + relaunch.
+   - `OK present` → proceed.
+   (Network is already confirmed open — `/api/v1/models` returned 200 last session.)
 3. **Validate model slugs** against the live `/models` list (slugs below are UNVERIFIED).
    Build the planned `eval validate-models` command (see §6) OR do an ad-hoc check.
    Confirm/replace: `openai/gpt-5.5`, `google/gemini-3.1-pro`,
@@ -157,10 +168,11 @@ Outputs: `data/raw/<run_id>.jsonl` (raw), `runs/<run_id>/results.csv`,
 
 ## 8. Git state
 
-- Branch: `claude/relaxed-maxwell-BEdrp` (push here only; never elsewhere without OK).
+- Branch: `claude/vigilant-franklin-bQxQa` (push here only; never elsewhere without OK).
+  (Previous session used `claude/relaxed-maxwell-BEdrp`; all commits carried over.)
 - Commit messages end with the session URL footer (per harness convention).
-- Recent commits: docs → M1 → model lineup → client.py (wip) → M2 mock half.
-- Push with `git push -u origin claude/relaxed-maxwell-BEdrp` (retry w/ backoff on net err).
+- Recent commits: docs → M1 → model lineup → client.py (wip) → M2 mock half → handover.
+- Push with `git push -u origin claude/vigilant-franklin-bQxQa` (retry w/ backoff on net err).
 
 ## 9. Open questions for the user
 
