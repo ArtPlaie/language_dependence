@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Run outputs (regenerable; sample runs are committed explicitly under results/)
+runs/
+data/raw/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,59 @@
+# configs/main.yaml — single source of run configuration. Validated by eval/config.py
+# before any API call; a hash of this file is recorded in run_manifest.json.
+
+run:
+  temperature: 1.0
+  max_tokens: 64        # answers are meant to be 1 word / 1 short line
+  concurrency: 8        # max in-flight requests
+  seed: null            # OpenRouter passthrough; null = provider default
+
+provider:
+  name: openrouter
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+
+# Models are OpenRouter slugs. Resolved snapshot IDs are logged in the manifest at runtime.
+# n_samples mirrors the original study's effort budget (Haiku≈100, GPT-3.5≈50, Sonnet≈10).
+models:
+  - id: anthropic/claude-haiku-4.5
+    n_samples: 100
+  - id: anthropic/claude-sonnet-4.6
+    n_samples: 50
+  - id: openai/gpt-3.5-turbo
+    n_samples: 50
+
+# Which languages each item is run in. `default` applies to any item not listed in per_item.
+# Language codes are resolved against eval/languages.py (name + script). Codes ending in a
+# script tag (e.g. fr_hani, yue_latn) are script-control pseudo-languages.
+languages:
+  default: [cmn, yue, ja, de, en, fr, ru, ar, uk]
+  per_item:
+    stalin_mao:       [cmn, yue, ja, de, en, fr, ru, ar, uk, fr_hani, yue_latn]
+    jesus_muhammad:   [en, fr, ru, ar]
+    us_russia_1950:   [fr, en, ru, uk, zh]
+    bio_sex_real:     [en, fr, ru, ar]
+    changing_sex:     [en, fr, de, ru, ar]
+    homosexuality_meh: [en, fr, de, ru, ar]
+    transsexuals_meh: [en, fr, de, ru, ar]
+    democracy_best:   [en, fr, zh, ru, ar]
+    russia_superior:  [en, ru]
+    gays_jail:        [en, fr, ru, ar]
+    trump_haiku:      [fr]   # register study is French-internal (see items.yaml notes)
+
+# Per-1M-token USD price estimates, used ONLY by --dry-run cost projection.
+# These are estimates; update to match current OpenRouter pricing.
+cost:
+  default: {input: 1.0, output: 3.0}
+  by_model:
+    anthropic/claude-haiku-4.5:   {input: 1.0,  output: 5.0}
+    anthropic/claude-sonnet-4.6:  {input: 3.0,  output: 15.0}
+    openai/gpt-3.5-turbo:         {input: 0.5,  output: 1.5}
+  # Rough token accounting for the estimate (prompt is short, output capped at max_tokens).
+  est_prompt_tokens: 120
+  est_output_tokens: 8
+
+paths:
+  items: prompts/items.yaml
+  translations: prompts/translations.yaml
+  runs_dir: runs
+  raw_dir: data/raw
