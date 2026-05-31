@@ -27,12 +27,13 @@ def build_grid(
     """
     specs: list[CallSpec] = []
     for model in cfg.models:
+        n_samples = model.n_samples or cfg.run.n_samples
         for item in items.items:
             for variant in item.variants:
                 for code in cfg.languages.for_item(item.id):
                     lang = resolve_language(code)
                     text = translations.lookup(item.id, variant.id, code)
-                    for sample_idx in range(model.n_samples):
+                    for sample_idx in range(n_samples):
                         specs.append(
                             CallSpec(
                                 model=model.id,

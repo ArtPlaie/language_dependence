@@ -6,21 +6,36 @@ run:
   max_tokens: 64        # answers are meant to be 1 word / 1 short line
   concurrency: 8        # max in-flight requests
   seed: null            # OpenRouter passthrough; null = provider default
+  n_samples: 20         # default repeats per cell; override per-model below
 
 provider:
   name: openrouter
   base_url: https://openrouter.ai/api/v1
   api_key_env: OPENROUTER_API_KEY
 
-# Models are OpenRouter slugs. Resolved snapshot IDs are logged in the manifest at runtime.
-# n_samples mirrors the original study's effort budget (Haiku≈100, GPT-3.5≈50, Sonnet≈10).
+# Models are OpenRouter slugs grouped by training region (informational only).
+# IMPORTANT: every slug here is UNVERIFIED (verified: false) — the env's network policy
+# blocks openrouter.ai, so slugs/prices could not be checked. Run `eval validate-models`
+# (once openrouter.ai is reachable) to confirm each slug against /models, pull real prices,
+# and flip verified -> true. Unverified models are skipped by a live run unless --allow-unverified.
+# n_samples omitted -> inherits run.n_samples (20).
 models:
-  - id: anthropic/claude-haiku-4.5
-    n_samples: 100
-  - id: anthropic/claude-sonnet-4.6
-    n_samples: 50
-  - id: openai/gpt-3.5-turbo
-    n_samples: 50
+  # --- US ---
+  - {id: anthropic/claude-opus-4.8,            region: US, verified: false}
+  - {id: anthropic/claude-sonnet-4.6,          region: US, verified: false}
+  - {id: anthropic/claude-haiku-4.5,           region: US, verified: false}
+  - {id: openai/gpt-5.5,                        region: US, verified: false, note: "slug uncertain (post-cutoff) — verify"}
+  - {id: google/gemini-3.1-pro,                region: US, verified: false, note: "slug uncertain (post-cutoff) — verify"}
+  - {id: meta-llama/llama-3.1-405b-instruct,   region: US, verified: false, note: "biggest Llama; swap to a Llama-4 slug if preferred"}
+  # --- EU ---
+  - {id: mistralai/mistral-large,              region: EU, verified: false, note: "the big Mistral; pin a dated slug at validation"}
+  # --- CN (the two big Chinese models) ---
+  - {id: qwen/qwen-max,                         region: CN, verified: false}
+  - {id: deepseek/deepseek-chat,               region: CN, verified: false, note: "DeepSeek-V3 chat endpoint"}
+  # --- AE / Arabic-first (availability on OpenRouter doubtful — take what we can) ---
+  - {id: inceptionai/jais-30b-chat,            region: AE, verified: false, note: "Arabic-first (Jais); likely NOT on OpenRouter — validation will drop if absent"}
+  # --- IN / Hindi (availability doubtful) ---
+  - {id: sarvamai/sarvam-m,                     region: IN, verified: false, note: "Indic (Sarvam); verify availability"}
 
 # Which languages each item is run in. `default` applies to any item not listed in per_item.
 # Language codes are resolved against eval/languages.py (name + script). Codes ending in a
@@ -44,10 +59,18 @@ languages:
 # These are estimates; update to match current OpenRouter pricing.
 cost:
   default: {input: 1.0, output: 3.0}
-  by_model:
-    anthropic/claude-haiku-4.5:   {input: 1.0,  output: 5.0}
-    anthropic/claude-sonnet-4.6:  {input: 3.0,  output: 15.0}
-    openai/gpt-3.5-turbo:         {input: 0.5,  output: 1.5}
+  by_model:  # rough estimates; validate-models will overwrite with real OpenRouter prices
+    anthropic/claude-opus-4.8:           {input: 15.0, output: 75.0}
+    anthropic/claude-sonnet-4.6:         {input: 3.0,  output: 15.0}
+    anthropic/claude-haiku-4.5:          {input: 1.0,  output: 5.0}
+    openai/gpt-5.5:                      {input: 5.0,  output: 15.0}
+    google/gemini-3.1-pro:               {input: 2.5,  output: 10.0}
+    meta-llama/llama-3.1-405b-instruct:  {input: 3.0,  output: 3.0}
+    mistralai/mistral-large:             {input: 2.0,  output: 6.0}
+    qwen/qwen-max:                       {input: 1.6,  output: 6.4}
+    deepseek/deepseek-chat:              {input: 0.3,  output: 1.2}
+    inceptionai/jais-30b-chat:           {input: 1.0,  output: 3.0}
+    sarvamai/sarvam-m:                   {input: 0.5,  output: 1.5}
   # Rough token accounting for the estimate (prompt is short, output capped at max_tokens).
   est_prompt_tokens: 120
   est_output_tokens: 8

@@ -26,6 +26,7 @@ class RunSettings(BaseModel):
     max_tokens: int = 64
     concurrency: int = 8
     seed: int | None = None
+    n_samples: int = Field(default=20, gt=0)  # default repeats; per-model override below
 
 
 class ProviderSettings(BaseModel):
@@ -36,7 +37,10 @@ class ProviderSettings(BaseModel):
 
 class ModelSpec(BaseModel):
     id: str
-    n_samples: int = Field(gt=0)
+    n_samples: int | None = Field(default=None, gt=0)  # None -> inherit run.n_samples
+    region: str | None = None       # informational grouping, e.g. "US", "CN", "EU", "AE", "IN"
+    verified: bool = False           # flipped to True by `eval validate-models`
+    note: str | None = None
 
 
 class Price(BaseModel):

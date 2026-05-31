@@ -39,9 +39,10 @@ def test_grid_size_matches_models_items_langs(loaded):
     grid = build_grid(cfg, items, translations)
     expected = 0
     for model in cfg.models:
+        n = model.n_samples or cfg.run.n_samples
         for item in items.items:
             n_langs = len(cfg.languages.for_item(item.id))
-            expected += model.n_samples * len(item.variants) * n_langs
+            expected += n * len(item.variants) * n_langs
     assert len(grid) == expected
     assert len(grid) > 0
 
